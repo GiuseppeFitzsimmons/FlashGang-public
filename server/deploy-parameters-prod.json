@@ -1,0 +1,18 @@
+{
+  "Parameters" : {
+    "DomainNameString" : "flashgang.io",
+    "ApiDomain": "api.flashgang.io",
+    "ApiVersion" : "v1",
+    "DynamoDBEndpoint" : "::",
+    "RsvpUrl" : "https://www.flashgang.io/rsvp",    
+    "PasswordResetUrl" : "https://www.flashgang.io",
+    "BucketName": "prod.flashgang.bucket",
+    "WebAliasWWW": "www.flashgang.io",
+    "WebAliasBase": "flashgang.io",
+    "ImageServerDomain": "images.flashgang.io",
+    "GoogleRedirectUri": "https://api.flashgang.io/v1/googleauth",
+    "WebsocketDomain": "websocket.flashgang.io",
+    "Home": "https://www.flashgang.io",
+    "CookieHome": ".flashgang.io"
+  }
+}

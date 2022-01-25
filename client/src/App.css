@@ -1,0 +1,107 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #09d3ac;
+}
+html, body, #root {
+  height: 100%;
+}
+.splash-enter {
+  height: 100%;
+  background-color: 'green';
+  margin-left: -10px;
+  margin-top: -10px;
+  width: calc(100% + 10px + 10px);
+}
+.splash-enter-active {
+  height: 100%;
+  transition: height 500ms;
+  background-color: rgb(97, 136, 51);
+  margin-left: -10px;
+  margin-top: -10px;
+  width: calc(100% + 10px + 10px);
+}
+.splash-exit {
+  height: 100%;
+  background-color: rgb(97, 136, 51);
+  margin-left: -10px;
+  margin-top: -10px;
+  width: calc(100% + 10px + 10px);
+}
+.splash-exit-done {
+  height: 10%;
+  background-color: rgb(97, 136, 51);
+  margin-left: -10px;
+  margin-top: -10px;
+  width: calc(100% + 10px + 10px);
+}
+.splash-exit-active {
+  height: 10%;
+  transition: height 500ms;
+  background-color: rgb(97, 136, 51);
+  margin-left: -10px;
+  margin-top: -10px;
+  width: calc(100% + 10px + 10px);
+}
+
+
+
+img.splashlogotype-enter {
+  position: 'relative';
+  width: '50%';
+  left: '25%';
+  top: '50%'
+}
+img.splashlogotype-enter-active {
+  position: 'relative';
+  width: '50%';
+  left: '25%';
+  top: '50%'
+}
+img.splashlogotype-exit {
+  position: 'relative';
+  width: '50%';
+  left: '25%';
+  top: '50%'
+}
+img.splashlogotype-exit-done {
+  position: 'relative';
+  width: '10%';
+  left: '5%';
+  top: '5%'
+}
+img.splashlogotype-exit-active {
+  position: 'relative';
+  width: '10%';
+  left: '5%';
+  top: '5%';
+  transition: width 500ms top 500ms;
+}
+
+.score-showing{
+  opacity: 1;
+  transition: opacity 200ms;
+  width: 100%;
+  text-align: center;
+}
+.score-not-showing{
+  opacity: 0;
+  transition: opacity 200ms;
+}

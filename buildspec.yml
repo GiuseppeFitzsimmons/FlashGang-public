@@ -1,0 +1,33 @@
+version: 0.2
+
+#env:
+  #variables:
+    #key: "value"
+    #key: "value"
+ #parameter-store:
+    #key: "value"
+    #key: "value"
+            
+phases:
+  install:
+    runtime-versions:
+      nodejs: 10
+    commands:
+      #- command
+      #- command
+  build:
+    commands:
+      - cd server
+      - node server-deploy.js --environment dev --deployToCloudformation false --install true
+  post_build:
+    commands:
+      #- command
+      #- command
+    finally:
+      #- command
+      #- command
+      
+artifacts:
+  files:
+    - server/packaged.yaml
+    - server/deploy-parameters-dev.json

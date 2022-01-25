@@ -1,0 +1,16 @@
+{
+  "Parameters" : {
+    "DomainNameString" : "localhost:8080",
+    "ApiDomain": "localhost:8080",
+    "ApiVersion" : "v1",
+    "BucketName": "dev.flashgang.bucket",
+    "RsvpUrl" : "http://localhost:3000/rsvp",    
+    "PasswordResetUrl" : "http://localhost:3000",
+    "DynamoDbEndpoint" : "http://localhost:8000",
+    "DYNAMODB_ENDPOINT": "http://localhost:8000",
+    "ImageServerDomain": "images-dev.flashgang.io",
+    "GoogleRedirectUri": "http://localhost:8080/googleauth",
+    "Home": "http://localhost:3000",
+    "CookieHome": "::"
+  }
+}

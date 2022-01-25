@@ -1,0 +1,964 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  FlashGang infrastructure as code template
+Parameters:
+  PointlessParam:
+    Description: A pointless param
+    Type: String
+    Default: pointless
+  DomainNameString:
+    Description: The domain name
+    Type: String
+    Default: flashgang.io
+  ApiDomain:
+    Description: The domain name
+    Type: String
+    Default: api.flashgang.io
+  ApiVersion:
+    Type: String
+    Default: 'v1'
+  DynamoDBEndpoint:
+    Type: String
+    Default: 'http://localhost:8000'
+  S3Endpoint:
+    Type: String
+    Default: 'https://s3.us-east-1.amazonaws.com'
+  RsvpUrl:
+    Type: String
+    Default: 'http://localhost:3000/rsvp'
+  PasswordResetUrl:
+    Type: String
+    Default: 'http://localhost:3000'
+  BucketName:
+    Type: String
+    Default: prod.flashgang.bucket
+  WebAliasWWW:
+    Type: String
+    Default: www.flashgang.io
+  WebAliasBase:
+    Type: String
+    Default: flashgang.io
+  InfrastructureNestedApp:
+    Type: String
+    Default: 'true'
+  ImageServerDomain:
+    Type: String
+    Default: images.flashgang.io
+  WebsocketDomain:
+    Type: String
+    Default: websocket.flashgang.io
+  GoogleRedirectUri:
+    Type: String
+    Default: 'https://api.flashgang.io/v1/googleauth'
+  Home:
+    Type: String
+    Default: https://www.flashgang.io
+  CookieHome:
+    Type: String
+    Default: .flashgang.io
+  SmtpUserName:
+    Type: String
+    Default: '::'
+  SmtpPassword:
+    Type: String
+    Default: '::'
+  AccessKeyId:
+    Type: String
+    Default: '::'
+  SecretAccessKey:
+    Type: String
+    Default: '::'
+  SigningSecret:
+    Type: String
+    Default: '::'
+
+Conditions: 
+  CreateInfrastructureStack: !Equals [ !Ref InfrastructureNestedApp, 'true' ]
+Globals:
+  Function:
+    Timeout: 18
+    Runtime: nodejs12.x
+    Handler: index.handler
+    Layers:
+      - !Ref CommonLayer
+    Environment:  
+      Variables:
+        USER_TABLE_NAME:
+          !Sub ${AWS::StackName}-user-table
+        FLASHDECK_TABLE_NAME:
+          !Sub ${AWS::StackName}-flashdeck-table
+        FLASHDECK_USER_TABLE_NAME:
+          !Sub ${AWS::StackName}-flashdeck-user-table
+        FLASHGANG_TABLE_NAME:
+          !Sub ${AWS::StackName}-flashgang-table
+        FLASHGANG_MEMBER_TABLE_NAME:
+          !Sub ${AWS::StackName}-flashgang-member-table
+        FLASHGANG_DECK_TABLE_NAME:
+          !Sub ${AWS::StackName}-flashgang-deck-table
+        POLL_TABLE_NAME:
+          !Sub ${AWS::StackName}-poll-table
+        WEBSOCKET_TABLE_NAME:
+          !Sub ${AWS::StackName}-websocket-table
+        DYNAMODB_ENDPOINT: !Ref DynamoDBEndpoint
+        REGION: "us-east-1"
+        SIGNING_SECRET: !Ref SigningSecret
+        SMTP_USER_NAME: !Ref SmtpUserName
+        SMTP_PASSWORD: !Ref SmtpPassword
+        MEMBERSHIP_SENDMAIL_ADDRESS: 'membership@flashgang.io'
+        SMTP_SERVER: 'email-smtp.us-east-1.amazonaws.com'
+        RSVP_URL: !Ref RsvpUrl
+        PASSWORD_RESET: !Ref PasswordResetUrl
+        AVATAR_BUCKET: !Ref ImageServerDomain
+        AVATAR_PREFIX: flashgang
+        IMAGE_BUCKET: !Ref ImageServerDomain
+        IMAGE_PREFIX: flashgang
+        S3_ENDPOINT: !Ref S3Endpoint
+        S3_SERVER_DOMAIN: !Ref ImageServerDomain
+        GOOGLE_REDIRECT_URI: !Ref GoogleRedirectUri
+        HOME: !Ref Home
+        COOKIE_HOME: !Ref CookieHome
+        ACCESS_KEY_ID: !Ref AccessKeyId
+        SECRET_ACCESS_KEY: !Ref SecretAccessKey
+        POINTLESS: !Ref PointlessParam
+Resources:
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-FlashGangGateway
+      StageName: prod
+      Cors: 
+        AllowOrigin: "'*'"
+        AllowMethods: "'OPTIONS,HEAD,GET,PUT,POST'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+  FlashgangWebSocketGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-FlashgangWebSocketGateway
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+  WebsocketRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        !Ref FlashgangWebSocketGateway
+      RouteKey: websocket
+      AuthorizationType: NONE
+      OperationName: WebsocketRoute
+      Target: !Join ['/',  [ 'integrations', !Ref WebsocketIntegration ],]
+  WebsocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        !Ref FlashgangWebSocketGateway
+      RouteKey: $default
+      AuthorizationType: NONE
+      OperationName: WebsocketDefaultRoute
+      Target: !Join ['/',  [ 'integrations', !Ref WebsocketIntegration ],]
+  WebsocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        !Ref FlashgangWebSocketGateway
+      Description: Websocket Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: 
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebsocketFunction.Arn}/invocations
+  WebsocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      CodeUri: websocketlambda
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+  WebsocketFunctionPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+    - FlashgangWebSocketGateway
+    - WebsocketFunction
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Ref: WebsocketFunction
+      Principal: apigateway.amazonaws.com
+# lambdas
+  SynchroniseLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: synchroniselambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ApiEventSource:
+          Type: Api
+          Properties:
+            Path: /synchronise
+            Method: any
+            RestApiId: !Ref ApiGateway
+
+  AdminLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: adminlambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ApiEventSource:
+          Type: Api
+          Properties:
+            Path: /admin
+            Method: any
+            RestApiId: !Ref ApiGateway
+
+  PollLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: polllambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ApiEventSource:
+          Type: Api
+          Properties:
+            Path: /poll
+            Method: any
+            RestApiId: !Ref ApiGateway
+        
+  AccountLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: accountlambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        AccountEventSource:
+          Type: Api
+          Properties:
+            Path: /account
+            Method: any
+            RestApiId: !Ref ApiGateway
+        LoginEventSource:
+          Type: Api
+          Properties:
+            Path: /login
+            Method: any
+            RestApiId: !Ref ApiGateway
+        ResetEventSource:
+          Type: Api
+          Properties:
+            Path: /resetpw
+            Method: any
+            RestApiId: !Ref ApiGateway
+        SetEventSource:
+          Type: Api
+          Properties:
+            Path: /setpw
+            Method: any
+            RestApiId: !Ref ApiGateway
+        SetSettingsSource:
+          Type: Api
+          Properties:
+            Path: /setsettings
+            Method: any
+            RestApiId: !Ref ApiGateway
+
+  RsvpLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: rsvplambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RsvpEventSource:
+          Type: Api
+          Properties:
+            Path: /rsvp
+            Method: any
+            RestApiId: !Ref ApiGateway
+    
+  GoogleLoginLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: googleloginlambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RsvpEventSource:
+          Type: Api
+          Properties:
+            Path: /googleauth
+            Method: any
+            RestApiId: !Ref ApiGateway
+
+  GalleryLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: gallerylambda/
+      Runtime: nodejs12.x
+      Role: 
+        !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RsvpEventSource:
+          Type: Api
+          Properties:
+            Path: /gallery
+            Method: any
+            RestApiId: !Ref ApiGateway
+
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Join ['-',  [ !Ref 'AWS::StackName', 'CommonLayer' ],]
+      Description: A few shareable code snippets that should work this time
+      ContentUri: commonlayer
+      CompatibleRuntimes:
+        - nodejs12.x
+      LicenseInfo: 'MIT'
+      RetentionPolicy: Delete
+# Database stuff
+  FlashDeckTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-flashdeck-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: owner
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        - IndexName: owner_index
+          KeySchema:
+            - AttributeName: owner
+              KeyType: HASH
+          Projection:
+            ProjectionType: KEYS_ONLY
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+  FlashDeckUserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-flashdeck-user-table
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: flashDeckId
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: flashDeckId
+          AttributeType: S
+        - AttributeName: lastModified
+          AttributeType: N
+      GlobalSecondaryIndexes:
+        - IndexName: last_modified_index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: lastModified
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+        - IndexName: flashdeck_index
+          KeySchema:
+            - AttributeName: flashDeckId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  FlashGangTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-flashgang-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: owner
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        - IndexName: owner_index
+          KeySchema:
+            - AttributeName: owner
+              KeyType: HASH
+          Projection:
+            ProjectionType: KEYS_ONLY
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  FlashGangMemberTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-flashgang-member-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: flashGangId
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: flashGangId
+          AttributeType: S
+        - AttributeName: lastModified
+          AttributeType: N
+      GlobalSecondaryIndexes:
+        - IndexName: last_modified_index
+          KeySchema:
+            - AttributeName: id
+              KeyType: HASH
+            - AttributeName: lastModified
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+        - IndexName: gang_index
+          KeySchema:
+            - AttributeName: flashGangId
+              KeyType: HASH
+            - AttributeName: lastModified
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-user-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  WebsocketTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-websocket-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: connectionId
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: connectionId
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  FlashGangDeckTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-flashgang-deck-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: flashGangId
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: flashGangId
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        - IndexName: gang_index
+          KeySchema:
+            - AttributeName: flashGangId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+        - IndexName: deck_index
+          KeySchema:
+            - AttributeName: id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  PollTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-poll-table
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: N
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      BillingMode: PROVISIONED
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+# infrastructure stuff
+  ApiDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    DependsOn: ApiGateway
+    Properties:
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      RegionalCertificateArn: !Ref FlashCertificate
+      DomainName: !Ref ApiDomain
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+    DependsOn: [ApiDomainName]
+  ApiBasePathMapping:
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    DependsOn: ApiGatewayDeployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DomainName: !Ref ApiDomainName
+      BasePath: !Ref ApiVersion
+      Stage: prod
+  WebsocketDomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties: 
+      DomainName: !Ref WebsocketDomain
+      DomainNameConfigurations: 
+        - CertificateArn: !Ref FlashCertificate
+  WebsocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - WebsocketRoute
+    #- WebsocketConnectRoute
+    #- WebsocketDisconnectRoute
+    - WebsocketDefaultRoute
+    Properties:
+      ApiId:
+        Ref: FlashgangWebSocketGateway
+  WebsocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        !Ref FlashgangWebSocketGateway
+      StageName: prod
+      DeploymentId:
+        Ref: WebsocketDeployment
+  WebsocketMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties: 
+      ApiId:
+        !Ref FlashgangWebSocketGateway
+      #ApiMappingKey: String
+      DomainName: !Ref WebsocketDomainName
+      Stage: !Ref WebsocketStage
+  FlashCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: flashgang.io
+      SubjectAlternativeNames:
+      - flashgang.io
+      - '*.flashgang.io'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+      - DomainName: '*.flashgang.io'
+        ValidationDomain: flashgang.io
+  ApiRoute53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: flashgang.io.
+      RecordSets:
+        - Name: !Ref ApiDomain
+          Type: A
+          AliasTarget:
+            EvaluateTargetHealth: false
+            HostedZoneId: !GetAtt ApiDomainName.RegionalHostedZoneId
+            DNSName: !GetAtt ApiDomainName.RegionalDomainName
+  WebsocketRoute53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: flashgang.io.
+      RecordSets:
+        - Name: !Ref WebsocketDomain
+          Type: A
+          AliasTarget:
+            EvaluateTargetHealth: false
+            HostedZoneId: !GetAtt WebsocketDomainName.RegionalHostedZoneId
+            DNSName: !GetAtt WebsocketDomainName.RegionalDomainName
+# roles & permissions stuff
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        !Join [
+          '-',
+          [
+            !Ref 'AWS::StackName',
+            'LambdaExecutionRole'
+          ],
+        ]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - WriteLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 'arn:aws:logs:*:*:log-group:/aws/lambda/*:*:*'
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - InvokeTokenLambda
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: '*'
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - Iam
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'iam:GetRolePolicy'
+                Resource: '*'
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - database
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:*'
+                Resource: '*'
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - S3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: 
+                  - 'arn:aws:s3:::*'
+                  - 'arn:aws:s3:::*/*'
+        - PolicyName:
+            Fn::Join:
+              - '-'
+              - - !Ref AWS::StackName
+                - websocket
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:*
+                Resource: 
+                  - '*'
+# bucket stuff
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        ErrorDocument: 'flashgang/index.html'
+        IndexDocument: 'index.html'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            MaxAge: '300'
+            AllowedMethods:
+              - POST
+            AllowedOrigins:
+              - '*'
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - S3Bucket
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: 'PublicReadForS3Website'
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: 'Allow'
+            Resource:
+              Fn::Join:
+                - ''
+                - - 'arn:aws:s3:::'
+                  - Ref: 'S3Bucket'
+                  - '/*'
+            Principal: '*'
+ 
+  WebsiteDNSName:
+    Type: AWS::Route53::RecordSet
+    DependsOn:
+      - WebsiteCloudfront
+    Properties:
+      HostedZoneName: flashgang.io.
+      Name: !Ref DomainNameString
+      Type: A
+      AliasTarget:
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt WebsiteCloudfront.DomainName
+  WebsiteCloudfront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - S3Bucket
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+          - Id: S3Origin
+            OriginPath: /flashgang
+            DomainName:
+              !Select [2, !Split ['/', !GetAtt S3Bucket.WebsiteURL]]
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: ''
+        Aliases:
+          - !Ref WebAliasWWW
+          - !Ref WebAliasBase
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          Compress: true
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+          ViewerProtocolPolicy: allow-all
+          MinTTL: '0'
+          MaxTTL: '0'
+          DefaultTTL: '0'
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !Ref FlashCertificate
+          SslSupportMethod: sni-only
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Ref ImageServerDomain
+      WebsiteConfiguration:
+        ErrorDocument: 'index.html'
+        IndexDocument: 'index.html'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            MaxAge: '300'
+            AllowedMethods:
+              - POST
+            AllowedOrigins:
+              - '*'
+
+  ImageBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - ImageBucket
+    Properties:
+      Bucket: !Ref ImageBucket
+      PolicyDocument:
+        Statement:
+          - Sid: 'PublicReadForS3Website'
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: 'Allow'
+            Resource:
+              Fn::Join:
+                - ''
+                - - 'arn:aws:s3:::'
+                  - Ref: ImageBucket
+                  - '/*'
+            Principal: '*'
+
+  ImageWebsiteDNSName:
+    Type: AWS::Route53::RecordSet
+    DependsOn:
+      - ImageWebsiteCloudfront
+    Properties:
+      HostedZoneName: flashgang.io.
+      Name: !Ref ImageServerDomain
+      Type: A
+      AliasTarget:
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt ImageWebsiteCloudfront.DomainName
+  ImageWebsiteCloudfront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - ImageBucket
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+          - Id: S3ImageOrigin
+            OriginPath: /flashgang
+            DomainName:
+              !Select [2, !Split ['/', !GetAtt ImageBucket.WebsiteURL]]
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: ''
+        Aliases:
+          - !Ref ImageServerDomain
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          Compress: true
+          TargetOriginId: S3ImageOrigin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+          ViewerProtocolPolicy: allow-all
+          MinTTL: '0'
+          MaxTTL: '0'
+          DefaultTTL: '0'
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !Ref FlashCertificate
+          SslSupportMethod: sni-only
+Outputs:
+  ClientUrl:
+    Value: !Ref Home
+  GatewayUrl:
+    Value: !Sub https://${ApiDomain}/${ApiVersion}
+  InternalWesocketUri:
+      Description: The WSS Protocol URI to connect to
+      Value:
+        Fn::Join:
+        - ''
+        - - wss://
+          - Ref: FlashgangWebSocketGateway
+          - .execute-api.
+          - Ref: AWS::Region
+          - .amazonaws.com/
+          - Ref: WebsocketStage
+  WebsocketUrl:
+    Value: !Sub wss://${WebsocketDomain}/prod

@@ -1,0 +1,12 @@
+{
+  "name": "adminlambda",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "install:all": "npm install"
+  },
+  "author": "",
+  "license": "ISC"
+}
